@@ -1,37 +1,43 @@
-#!/usr/bin/env python
-
-# WS client example
+# Traffic Simulator Controller
 
 import asyncio
 import websockets
 import json
-
+import time
 data = []
+sendData = True
+i = 0
 
-async def init():
+async def startClient():
     uri = "ws://82.197.211.219:9002"
     async with websockets.connect(uri) as websocket:
-        await websocket.send("Groep 2 aanwezig!")
+        while True:
+            await executeInLoop(websocket)
+            await changeState(websocket, 1, "green")
+            time.sleep(3)
+
+async def executeInLoop(websocket):
+    global sendData
+    global i
+    if sendData == True:
+        await websocket.send("Execute in loop {i}")
+        print(f"> Send")
         received = await websocket.recv()
         global data
         data = json.dumps(received)
-        print(f"> start command")
+        print(f"> {data}")
+        i = i + 1
 
-async def changeState(id, state):
-    uri = "ws://82.197.211.219:9002"
-    async with websockets.connect(uri) as websocket:
-        #data = { "msg_type": "change_state", "data": [{"id": id, "state": state}] }
-        send = { "id": id, "state": state }
-        await websocket.send(json.dumps(send))
-        received = await websocket.recv()
-        global data
-        data = json.dumps(received)
-        print(f"> send change_state command")
+    if i < 3:
+        await executeInLoop(websocket)
 
-async def printData():
-    print(f"> {data}")
+async def changeState(websocket, id, state):
+    send = { "msg_type": "change_state", "data": [{"id": id, "state": state}] }
+    await websocket.send(json.dumps(send))
+    print(f"> Send: {send}")
+    received = await websocket.recv()
+    global data
+    data = json.dumps(received)
+    print(f"> Received: {data}")
 
-asyncio.get_event_loop().run_until_complete(init())
-asyncio.get_event_loop().run_until_complete(printData())
-#asyncio.get_event_loop().run_until_complete(changeState(1, "green"))
-#asyncio.get_event_loop().run_until_complete(printData())
+asyncio.get_event_loop().run_until_complete(startClient())
