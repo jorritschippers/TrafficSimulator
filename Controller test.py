@@ -13,27 +13,28 @@ async def startClient():
     uri = "ws://82.197.211.219:6969"
     try:
         async with websockets.connect(uri) as websocket:
-            await requestState(websocket)
+            await notifyStateChange(websocket)
             while True:
-                #function for receiving info from server if something happens (no msg type)
-
                 global json_data
                 send = changeDataValues(json_data)
                 if len(send) > 0:
-                    await changeState(websocket, send)
+                    await performStateChange(websocket, send)
+
+                await notifySucces(websocket)
     except Exception:
         print(f"> Server was stopped by error")
 
-# Sends request_state message to server and receives current_state
-async def requestState(websocket):
-    send = json.dumps({"msg_type": "request_state", "data": [] })
-    await websocket.send(send)
-    print(f"> Send (request_state): {send}")
-
+# Receives current_state from server
+async def notifyStateChange(websocket):
     received = await websocket.recv()
     global json_data
     json_data = json.loads(received)["data"]
-    print(f"> Received (current_state): {received}")
+    print(f"> Received (notify_state_change): {received}")
+
+# Receives succes from server
+async def notifySucces(websocket):
+    received = await websocket.recv()
+    print(f"> Received (end_notification): {received}")
 
 # Changes data values of data and returns changes to send to the server
 def changeDataValues(data):
@@ -51,10 +52,10 @@ def changeDataValues(data):
     return send
 
 # Sends change_state message to server
-async def changeState(websocket, data):
-    send = json.dumps({ "msg_type": "change_state", "data": data })
+async def performStateChange(websocket, data):
+    send = json.dumps({ "msg_type": "perform_state_change", "data": data })
     await websocket.send(send)
-    print(f"> Send (change_state): {send}")
+    print(f"> Send (perform_state_change): {send}")
 
 # Runs startClient function until complete
 asyncio.get_event_loop().run_until_complete(startClient())
