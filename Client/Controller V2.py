@@ -10,19 +10,11 @@ json_data = []
 
 # Creates a websocketconnection and executes other functions
 async def startClient():
-    uri = "ws://82.197.211.219:6969"
-    try:
-        async with websockets.connect(uri) as websocket:
-            await notifyStateChange(websocket)
-            while True:
-                global json_data
-                send = changeDataValues(json_data)
-                if len(send) > 0:
-                    await performStateChange(websocket, send)
-
-                await notifySucces(websocket)
-    except Exception:
-        print(f"> Server was stopped by error")
+    uri = "ws://31.201.228.97:6969"
+    async with websockets.connect(uri) as websocket:
+        await notifyStateChange(websocket)
+        await performStateChange(websocket)
+        await notifyStateChange(websocket)
 
 # Receives current_state from server
 async def notifyStateChange(websocket):
@@ -52,10 +44,18 @@ def changeDataValues(data):
     return send
 
 # Sends change_state message to server
-async def performStateChange(websocket, data):
-    send = json.dumps({ "msg_type": "perform_state_change", "data": data })
+async def performStateChange(websocket):
+    send = json.dumps({ "msg_id": 2, "msg_type": "perform_state_change", "data": [{"id": 5, "state": "green"}] })
     await websocket.send(send)
     print(f"> Send (perform_state_change): {send}")
 
 # Runs startClient function until complete
 asyncio.get_event_loop().run_until_complete(startClient())
+
+
+#nog toe te voegen
+# - state etc toevoegen aan data bij binnenkomen
+# - msg_id een int++ doen
+# - goed returnen
+# vb - {"msg_id": 0,"msg_type": "notify_state_change","data": [{"id": 0,"crosses": [1,2,3],"clearing_time": 4.2},{"id": 1,"crosses": [0],"clearing_time": 2.4}]}
+# als groep de id's en crosses compleet maken

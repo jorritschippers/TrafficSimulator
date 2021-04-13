@@ -11,29 +11,26 @@ json_data = []
 # Creates a websocketconnection and executes other functions
 async def startClient():
     uri = "ws://82.197.211.219:6969"
-    try:
-        async with websockets.connect(uri) as websocket:
-            await requestState(websocket)
-            while True:
-                #function for receiving info from server if something happens (no msg type)
+    async with websockets.connect(uri) as websocket:
+        await requestState(websocket)
+        # while True:z
+        #     #function for receiving info from server if something happens (no msg type)
 
-                global json_data
-                send = changeDataValues(json_data)
-                if len(send) > 0:
-                    await changeState(websocket, send)
-    except Exception:
-        print(f"> Server was stopped by error")
+        #     global json_data
+        #     send = changeDataValues(json_data)
+        #     if len(send) > 0:
+        #         await changeState(websocket, send)
 
 # Sends request_state message to server and receives current_state
 async def requestState(websocket):
-    send = json.dumps({"msg_type": "request_state", "data": [] })
+    send = json.dumps({"x":100,"y":100})
     await websocket.send(send)
     print(f"> Send (request_state): {send}")
 
-    received = await websocket.recv()
-    global json_data
-    json_data = json.loads(received)["data"]
-    print(f"> Received (current_state): {received}")
+    # received = await websocket.recv()
+    # global json_data
+    # json_data = json.loads(received)["data"]
+    # print(f"> Received (current_state): {received}")
 
 # Changes data values of data and returns changes to send to the server
 def changeDataValues(data):
