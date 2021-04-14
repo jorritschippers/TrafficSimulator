@@ -4,49 +4,33 @@
 import asyncio
 import websockets
 import json
-import time
 
 # Global data and values
 ip = ["84.86.123.188", "82.197.211.219", "31.201.228.97", "147.12.9.237", "94.214.255.27"]
 json_data = []
 msg_id = 0
-current_clearing_time = 0.0
-saved_time = 0
 
 # Creates a websocketconnection and executes other functions
 async def startClient():
-    i = 0
     global ip
     uri = "ws://" + ip[1] + ":6969"
-    print(f"> {uri}")
-    print(f"> Controller made connection with server")
-    await initialization()
+    async with websockets.connect(uri) as websocket:
+        print(f"> Controller made connection with server")
+        await initialization(websocket)
 
-    while True:
-        global json_data, current_clearing_time, saved_time
-        if (time.time() - saved_time) >= current_clearing_time and current_clearing_time > 0 and saved_time > 0:
+        while True:
+            global json_data
             commands = changeDataValues(json_data)
-            current_clearing_time = 0
-            print("-------------------------------------------------------------------------------------")
             if len(commands) > 0:
-                await notifyTrafficLightChange(commands)
-        if current_clearing_time == 0 or saved_time == 0:
-            commands = changeDataValues(json_data)
-            print("1111111111111111111111111111111111111111111111111111111111111111111111111")
-            print(saved_time)
-            print(current_clearing_time)
-            if len(commands) > 0:
-                await notifyTrafficLightChange(commands)
+                await notifyTrafficLightChange(websocket, commands)
 
-        if i == 0:
-            await notifySensorChange()
+            await notifySensorChange(websocket)
 
-        #print(f"> Test: {json_data}")
-        i = i + 1
+            print(f"> Test: {json_data}")
 
 # Receives initialization from server
-async def initialization():
-    received = json.dumps({ "msg_id": 1, "msg_type": "initialization", "data": [{"id": 1, "crosses": [2,3], "clearing_time": 3.2}, {"id": 2, "crosses": [1,3], "clearing_time": 3.2}, {"id": 3, "crosses": [1,2], "clearing_time": 3.2}] })
+async def initialization(websocket):
+    received = await websocket.recv()
     print(f"> Received (initialization): {received}")
 
     global msg_id
@@ -65,8 +49,8 @@ async def initialization():
     print(f"> Saved initialization data")              
 
 # Receives notify_sensor_change from server
-async def notifySensorChange():
-    received = json.dumps({ "msg_id": 5, "msg_type": "notify_sensor_change", "data": [{"id": 1, "vehicles_waiting": True, "vehicles_coming": False, "emergency_vehicle": False}, {"id": 2, "vehicles_waiting": True, "vehicles_coming": False, "emergency_vehicle": False}]})
+async def notifySensorChange(websocket):
+    received = await websocket.recv()
     print(f"> Received (notify_sensor_change): {received}")
 
     global msg_id
@@ -88,7 +72,6 @@ async def notifySensorChange():
 def changeDataValues(data):
     commands = []
     crosses = []
-    max_clearing_time = 0.0
 
     for i, path in enumerate(data):
         if path["state"] == "green":
@@ -97,14 +80,10 @@ def changeDataValues(data):
                 commands.append({"id": data[i]["id"], "state": data[i]["state"] })
                 for cross in data[i]["crosses"]:
                     crosses.append(cross)
-                if data[i]["clearing_time"] > max_clearing_time:
-                    max_clearing_time = data[i]["clearing_time"]
         elif path["state"] == "orange":
             if not path["vehicles_waiting"] or not path["vehicles_coming"] or not path["emergency_vehicle"]:
                 data[i]["state"] = "red"
                 commands.append({"id": data[i]["id"], "state": data[i]["state"] })
-                if data[i]["clearing_time"] > max_clearing_time:
-                    max_clearing_time = data[i]["clearing_time"]
         elif path["state"] == "red":
             if path["vehicles_waiting"] or path["vehicles_coming"] or path["emergency_vehicle"]:
                 proceed = True
@@ -121,13 +100,6 @@ def changeDataValues(data):
                     for cross in data[i]["crosses"]:
                         crosses.append(cross)
 
-                    if data[i]["clearing_time"] > max_clearing_time:
-                        max_clearing_time = data[i]["clearing_time"]
-
-    global current_clearing_time, saved_time
-    current_clearing_time = max_clearing_time
-    saved_time = time.time()
-
     print(f"> Evaluated current data")      
 
     global json_data
@@ -135,11 +107,12 @@ def changeDataValues(data):
     return commands
 
 # Sends notify_traffic_light_change message to server
-async def notifyTrafficLightChange(data):
+async def notifyTrafficLightChange(websocket, data):
     global msg_id
-    msg_id += 1
+    msg_id = json.loads(received)["msg_id"] + 1
 
     command = json.dumps({ "msg_id": msg_id, "msg_type": "notify_traffic_light_change", "data": data })
+    await websocket.send(command)
 
     print(f"> Send (notify_traffic_light_change): {command}")
 

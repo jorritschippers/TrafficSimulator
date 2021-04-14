@@ -4,11 +4,14 @@
 import asyncio
 import websockets
 import json
+import time
 
 # Global data and values
 ip = ["84.86.123.188", "82.197.211.219", "31.201.228.97", "147.12.9.237", "94.214.255.27"]
 json_data = []
 msg_id = 0
+current_clearing_time = 0.0
+saved_time = 0
 
 # Creates a websocketconnection and executes other functions
 async def startClient():
@@ -19,14 +22,21 @@ async def startClient():
         await initialization(websocket)
 
         while True:
-            global json_data
-            commands = changeDataValues(json_data)
-            if len(commands) > 0:
-                await notifyTrafficLightChange(websocket, commands)
+            global json_data, current_clearing_time, saved_time
+            if current_clearing_time == 0 or saved_time == 0:
+                commands = changeDataValues(json_data)
+                if len(commands) > 0:
+                    await notifyTrafficLightChange(commands)
 
+            if (time.time() - saved_time) >= current_clearing_time and current_clearing_time > 0 and saved_time > 0:
+                commands = changeDataValues(json_data)
+                current_clearing_time = 0
+                if len(commands) > 0:
+                    await notifyTrafficLightChange(commands)
+            
             await notifySensorChange(websocket)
 
-            print(f"> Test: {json_data}")
+            #print(f"> Test: {json_data}")
 
 # Receives initialization from server
 async def initialization(websocket):
@@ -72,6 +82,7 @@ async def notifySensorChange(websocket):
 def changeDataValues(data):
     commands = []
     crosses = []
+    max_clearing_time = 0.0
 
     for i, path in enumerate(data):
         if path["state"] == "green":
@@ -80,6 +91,8 @@ def changeDataValues(data):
                 commands.append({"id": data[i]["id"], "state": data[i]["state"] })
                 for cross in data[i]["crosses"]:
                     crosses.append(cross)
+                if data[i]["clearing_time"] > max_clearing_time:
+                    max_clearing_time = data[i]["clearing_time"]
         elif path["state"] == "orange":
             if not path["vehicles_waiting"] or not path["vehicles_coming"] or not path["emergency_vehicle"]:
                 data[i]["state"] = "red"
@@ -102,8 +115,10 @@ def changeDataValues(data):
 
     print(f"> Evaluated current data")      
 
-    global json_data
+    global json_data, current_clearing_time, saved_time
     json_data = data
+    current_clearing_time = max_clearing_time
+    saved_time = time.time()
     return commands
 
 # Sends notify_traffic_light_change message to server
