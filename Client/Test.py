@@ -27,14 +27,14 @@ async def startClient():
         if (time.time() - saved_time) >= current_clearing_time and current_clearing_time > 0 and saved_time > 0:
             commands = changeDataValues(json_data)
             current_clearing_time = 0
-            print("-------------------------------------------------------------------------------------")
+            # print("-------------------------------------------------------------------------------------")
             if len(commands) > 0:
                 await notifyTrafficLightChange(commands)
         if current_clearing_time == 0 or saved_time == 0:
             commands = changeDataValues(json_data)
-            print("1111111111111111111111111111111111111111111111111111111111111111111111111")
-            print(saved_time)
-            print(current_clearing_time)
+            # print("1111111111111111111111111111111111111111111111111111111111111111111111111")
+            # print(saved_time)
+            # print(current_clearing_time)
             if len(commands) > 0:
                 await notifyTrafficLightChange(commands)
 
@@ -60,13 +60,15 @@ async def initialization():
             json_data[i]["state"] = "red"
             json_data[i]["vehicles_waiting"] = False
             json_data[i]["vehicles_coming"] = False
+            json_data[i]["vehicles_blocking"] = False
             json_data[i]["emergency_vehicle"] = False
+            json_data[i]["public_transport"] = False
 
     print(f"> Saved initialization data")              
 
 # Receives notify_sensor_change from server
 async def notifySensorChange():
-    received = json.dumps({ "msg_id": 5, "msg_type": "notify_sensor_change", "data": [{"id": 1, "vehicles_waiting": True, "vehicles_coming": False, "emergency_vehicle": False}, {"id": 2, "vehicles_waiting": True, "vehicles_coming": False, "emergency_vehicle": False}]})
+    received = json.dumps({ "msg_id": 5, "msg_type": "notify_sensor_change", "data": [{"id": 1, "vehicles_waiting": True, "vehicles_coming": False, "vehicles_blocking": False, "public_transport": False, "emergency_vehicle": False}, {"id": 2, "vehicles_waiting": True, "vehicles_coming": False, "vehicles_blocking": False, "emergency_vehicle": False, "public_transport": True}]})
     print(f"> Received (notify_sensor_change): {received}")
 
     global msg_id
@@ -81,6 +83,8 @@ async def notifySensorChange():
                     json_data[i]["vehicles_waiting"] = sensorValue["vehicles_waiting"]
                     json_data[i]["vehicles_coming"] = sensorValue["vehicles_coming"]
                     json_data[i]["emergency_vehicle"] = sensorValue["emergency_vehicle"]
+                    json_data[i]["vehicles_blocking"] = sensorValue["vehicles_blocking"]
+                    json_data[i]["public_transport"] = sensorValue["public_transport"]
 
     print(f"> Compared existing data with notify_sensor_change")      
 
@@ -91,8 +95,27 @@ def changeDataValues(data):
     max_clearing_time = 0.0
 
     for i, path in enumerate(data):
+        if path["emergency_vehicle"] or path["public_transport"] or path["vehicles_blocking"]:
+            proceed = True
+            for cross in crosses:
+                if data[i]["id"] == cross:
+                    proceed = False
+
+            if proceed:
+                data[i]["state"] = "green"
+                data[i]["vehicles_blocking"] = False
+                data[i]["emergency_vehicle"] = False
+                data[i]["public_transport"] = False
+                commands.append({"id": data[i]["id"], "state": data[i]["state"] })
+                for cross in data[i]["crosses"]:
+                    crosses.append(cross)
+
+                if data[i]["clearing_time"] > max_clearing_time:
+                    max_clearing_time = data[i]["clearing_time"]
+
+    for i, path in enumerate(data):
         if path["state"] == "green":
-            if not path["vehicles_waiting"] or not path["vehicles_coming"] or not path["emergency_vehicle"]:
+            if not path["vehicles_waiting"] or not path["vehicles_coming"]:
                 data[i]["state"] = "orange"
                 commands.append({"id": data[i]["id"], "state": data[i]["state"] })
                 for cross in data[i]["crosses"]:
@@ -100,13 +123,13 @@ def changeDataValues(data):
                 if data[i]["clearing_time"] > max_clearing_time:
                     max_clearing_time = data[i]["clearing_time"]
         elif path["state"] == "orange":
-            if not path["vehicles_waiting"] or not path["vehicles_coming"] or not path["emergency_vehicle"]:
+            if not path["vehicles_waiting"] or not path["vehicles_coming"]:
                 data[i]["state"] = "red"
                 commands.append({"id": data[i]["id"], "state": data[i]["state"] })
                 if data[i]["clearing_time"] > max_clearing_time:
                     max_clearing_time = data[i]["clearing_time"]
         elif path["state"] == "red":
-            if path["vehicles_waiting"] or path["vehicles_coming"] or path["emergency_vehicle"]:
+            if path["vehicles_waiting"] or path["vehicles_coming"]:
                 proceed = True
                 for cross in crosses:
                     if data[i]["id"] == cross:
