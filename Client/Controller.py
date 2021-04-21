@@ -24,13 +24,15 @@ async def startClient():
 
             while True:
                 global json_data, current_clearing_time, saved_time
-                if (time.time() - saved_time) >= current_clearing_time and current_clearing_time > 0 and saved_time > 0:
-                    commands = changeDataValues(json_data)
-                    current_clearing_time = 0
+                print(f"> Current distance time: {time.time() - saved_time}")
+                if current_clearing_time == 0 or saved_time == 0:
+                    #print(f"> NEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE {current_clearing_time} - {saved_time-time.time()}")
+                    commands = await changeDataValues(json_data)
                     if len(commands) > 0:
                         await notifyTrafficLightChange(websocket, commands)
-                elif current_clearing_time == 0 or saved_time == 0:
-                    commands = changeDataValues(json_data)
+                elif (time.time() - saved_time) >= (current_clearing_time/2):
+                    #print(f"> JAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA {current_clearing_time} - {saved_time-time.time()}")
+                    commands = await changeDataValues(json_data)
                     if len(commands) > 0:
                         await notifyTrafficLightChange(websocket, commands)
 
@@ -74,20 +76,20 @@ async def notifySensorChange(websocket):
         for i, currentValue in enumerate(json_data):
             for sensorValue in data:
                 if currentValue["id"] == sensorValue["id"]:
-                    json_data[i]["vehicles_waiting"] = valueToBool(sensorValue["vehicles_waiting"])
-                    json_data[i]["vehicles_coming"] = valueToBool(sensorValue["vehicles_coming"])
-                    json_data[i]["vehicles_blocking"] = valueToBool(sensorValue["vehicles_blocking"])
-                    json_data[i]["emergency_vehicle"] = valueToBool(sensorValue["emergency_vehicle"])
-                    json_data[i]["public_transport"] = valueToBool(sensorValue["public_transport"])
+                    json_data[i]["vehicles_waiting"] = await valueToBool(sensorValue["vehicles_waiting"])
+                    json_data[i]["vehicles_coming"] = await valueToBool(sensorValue["vehicles_coming"])
+                    json_data[i]["vehicles_blocking"] = await valueToBool(sensorValue["vehicles_blocking"])
+                    json_data[i]["emergency_vehicle"] = await valueToBool(sensorValue["emergency_vehicle"])
+                    json_data[i]["public_transport"] = await valueToBool(sensorValue["public_transport"])
 
     print(f"> Processed notify_sensor_change")      
 
 # Changes input to boolean
-def valueToBool(v):
+async def valueToBool(v):
     return str(v).lower() in ("True", "true", "1")
 
 # Changes data values of data and returns changes to send to the server
-def changeDataValues(data):
+async def changeDataValues(data):
     commands = []
     crosses = []
     max_clearing_time = 0.0
@@ -101,9 +103,9 @@ def changeDataValues(data):
 
             if proceed:
                 data[i]["state"] = "green"
-                data[i]["vehicles_blocking"] = False
-                data[i]["emergency_vehicle"] = False
-                data[i]["public_transport"] = False
+                # data[i]["vehicles_blocking"] = False
+                # data[i]["emergency_vehicle"] = False
+                # data[i]["public_transport"] = False
                 commands.append({"id": data[i]["id"], "state": data[i]["state"] })
                 for cross in data[i]["crosses"]:
                     crosses.append(cross)
@@ -124,6 +126,8 @@ def changeDataValues(data):
             if not path["vehicles_waiting"] or not path["vehicles_coming"]:
                 data[i]["state"] = "red"
                 commands.append({"id": data[i]["id"], "state": data[i]["state"] })
+                for cross in data[i]["crosses"]:
+                    crosses.append(cross)
                 if data[i]["clearing_time"] > max_clearing_time:
                     max_clearing_time = data[i]["clearing_time"]
         elif path["state"] == "red":
@@ -135,9 +139,8 @@ def changeDataValues(data):
 
                 if proceed:
                     data[i]["state"] = "green"
-                    data[i]["vehicles_waiting"] = False
-                    data[i]["vehicles_coming"] = False
-                    data[i]["emergency_vehicle"] = False
+                    # data[i]["vehicles_waiting"] = False
+                    # data[i]["vehicles_coming"] = False
                     commands.append({"id": data[i]["id"], "state": data[i]["state"] })
                     for cross in data[i]["crosses"]:
                         crosses.append(cross)
