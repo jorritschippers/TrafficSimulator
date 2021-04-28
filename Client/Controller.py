@@ -10,7 +10,6 @@ import threading
 # Global data and values
 ip = ["84.86.123.188", "82.197.211.219", "31.201.228.97", "147.12.9.237", "94.214.255.27"]
 json_data = []
-light_order = []
 msg_id = 0
 current_clearing_time = 0.0
 saved_time = 0
@@ -37,9 +36,6 @@ async def main():
                 if not y.is_alive:
                     y.join()  
 
-                global light_order
-                print(f"> LightOrder: {light_order}")
-
     except Exception as e:
         print(f"> An error occured ({e})")             
 
@@ -50,7 +46,7 @@ async def executeAlgorithms(websocket):
         commands = await changeDataValues(json_data)
         if len(commands) > 0:
             await notifyTrafficLightChange(websocket, commands)
-    elif (time.time() - saved_time) >= current_clearing_time:
+    elif (time.time() - saved_time) >= (current_clearing_time / 2):
         commands = await changeDataValues(json_data)
         if len(commands) > 0:
             await notifyTrafficLightChange(websocket, commands)
@@ -86,24 +82,15 @@ async def notifySensorChange(websocket):
     msg_id = json.loads(received)["msg_id"]
 
     data = json.loads(received)["data"]
-    if json.loads(received)["msg_type"] == "notify_sensor_change":
-        global json_data, light_order
-        for i, currentValue in enumerate(json_data):
-            for sensorValue in data:
-                if currentValue["id"] == sensorValue["id"]:
-                    json_data[i]["vehicles_waiting"] = valueToBool(sensorValue["vehicles_waiting"])
-                    json_data[i]["vehicles_coming"] = valueToBool(sensorValue["vehicles_coming"])
-                    json_data[i]["vehicles_blocking"] = valueToBool(sensorValue["vehicles_blocking"])
-                    json_data[i]["emergency_vehicle"] = valueToBool(sensorValue["emergency_vehicle"])
-                    json_data[i]["public_transport"] = valueToBool(sensorValue["public_transport"])
-
-                    if json_data[i]["vehicles_waiting"] or json_data[i]["vehicles_coming"]:
-                        add = True             
-                        for light in light_order:
-                            if light == sensorValue["id"]:
-                                add = False
-                        if add:
-                            light_order.append(sensorValue["id"])
+    global json_data
+    for i, currentValue in enumerate(json_data):
+        for sensorValue in data:
+            if currentValue["id"] == sensorValue["id"]:
+                json_data[i]["vehicles_waiting"] = valueToBool(sensorValue["vehicles_waiting"])
+                json_data[i]["vehicles_coming"] = valueToBool(sensorValue["vehicles_coming"])
+                json_data[i]["vehicles_blocking"] = valueToBool(sensorValue["vehicles_blocking"])
+                json_data[i]["emergency_vehicle"] = valueToBool(sensorValue["emergency_vehicle"])
+                json_data[i]["public_transport"] = valueToBool(sensorValue["public_transport"])
 
     print(f"> Processed notify_sensor_change")      
 
@@ -114,9 +101,11 @@ def valueToBool(v):
 # Changes data values of data and returns changes to send to the server
 async def changeDataValues(data):
     commands = []
+    orders = []
     crosses = []
     max_clearing_time = 0.0
 
+    # Prioritize certain booleans
     for i, path in enumerate(data):
         if path["emergency_vehicle"] or path["public_transport"] or path["vehicles_blocking"]:
             proceed = True
@@ -133,28 +122,20 @@ async def changeDataValues(data):
                 if data[i]["clearing_time"] > max_clearing_time:
                     max_clearing_time = data[i]["clearing_time"]
 
-    global light_order
-    for i, light in enumerate(light_order):
-        ex_data = data[i]
-        new_data = data[light-1]
-        data[light-1] = ex_data
-        data[i] = new_data
-        if len(light_order) > 0:
-            light_order.pop(0)
-
+    # Change the state of a light
     for i, path in enumerate(data):
         if path["state"] == "green":
             if not path["vehicles_waiting"] or not path["vehicles_coming"]:
-                data[i]["state"] = "orange"
-                commands.append({"id": data[i]["id"], "state": data[i]["state"] })
+                orders.append([i, "orange"])
+                commands.append({"id": data[i]["id"], "state": "orange" })
                 for cross in data[i]["crosses"]:
                     crosses.append(cross)
                 if data[i]["clearing_time"] > max_clearing_time:
                     max_clearing_time = data[i]["clearing_time"]
         elif path["state"] == "orange":
             if not path["vehicles_waiting"] or not path["vehicles_coming"]:
-                data[i]["state"] = "red"
-                commands.append({"id": data[i]["id"], "state": data[i]["state"] })
+                orders.append([i, "red"])
+                commands.append({"id": data[i]["id"], "state": "red" })
                 for cross in data[i]["crosses"]:
                     crosses.append(cross)
                 if data[i]["clearing_time"] > max_clearing_time:
@@ -167,13 +148,16 @@ async def changeDataValues(data):
                         proceed = False
 
                 if proceed:
-                    data[i]["state"] = "green"
-                    commands.append({"id": data[i]["id"], "state": data[i]["state"] })
+                    orders.append([i, "green"])
+                    commands.append({"id": data[i]["id"], "state": "green" })
                     for cross in data[i]["crosses"]:
                         crosses.append(cross)
 
                     if data[i]["clearing_time"] > max_clearing_time:
                         max_clearing_time = data[i]["clearing_time"]
+    
+    for order in orders:
+        data[order[0]]["state"] = order[1]
 
     print(f"> Evaluated current data (execute: {len(commands)})")      
 
