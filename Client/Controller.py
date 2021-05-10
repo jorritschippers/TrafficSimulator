@@ -17,8 +17,8 @@ saved_time = 0
 # Creates a websocketconnection and executes other functions by multithreading
 async def main():
     global ip
-    uri = "ws://" + ip[1] + ":6969"
-    try:
+    uri = "ws://" + ip[0] + ":6969"
+    try: #nog prioriteren op volgorde, tijdsverschil aanpassen (brug en weg niet hetzelfde), wachttijd na stoplicht op rood?
         async with websockets.connect(uri) as websocket:
             print(f"> Controller made connection with server")
             await initialization(websocket)
@@ -56,20 +56,17 @@ async def initialization(websocket):
     received = await websocket.recv()
     print(f"> Received (initialization): {received}")
 
-    global msg_id
-    msg_id = json.loads(received)["msg_id"]
+    global msg_id, json_data
+    msg_id = json.loads(received)["msg_id"] 
+    json_data = json.loads(received)["data"]
 
-    if json.loads(received)["msg_type"] == "initialization":
-        global json_data
-        json_data = json.loads(received)["data"]
-
-        for i, value in enumerate(json_data):        
-            json_data[i]["state"] = "red"
-            json_data[i]["vehicles_waiting"] = False
-            json_data[i]["vehicles_coming"] = False
-            json_data[i]["vehicles_blocking"] = False
-            json_data[i]["emergency_vehicle"] = False
-            json_data[i]["public_transport"] = False
+    for i, value in enumerate(json_data):        
+        json_data[i]["state"] = "red"
+        json_data[i]["vehicles_waiting"] = False
+        json_data[i]["vehicles_coming"] = False
+        json_data[i]["vehicles_blocking"] = False
+        json_data[i]["emergency_vehicle"] = False
+        json_data[i]["public_transport"] = False
 
     print(f"> Saved initialization data")              
 
@@ -78,11 +75,10 @@ async def notifySensorChange(websocket):
     received = await websocket.recv()
     print(f"> Received (notify_sensor_change): {received}")
 
-    global msg_id
+    global msg_id, json_data
     msg_id = json.loads(received)["msg_id"]
-
     data = json.loads(received)["data"]
-    global json_data
+
     for i, currentValue in enumerate(json_data):
         for sensorValue in data:
             if currentValue["id"] == sensorValue["id"]:
