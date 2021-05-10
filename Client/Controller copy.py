@@ -52,7 +52,7 @@ async def executeAlgorithms(websocket):
 
     global actions, json_data, crosses
     for i, action in enumerate(actions):
-        if(time.time() - action[2]) >= action[3]:
+        if(time.time() - action[2]) >= (action[3]/2):
             if(action[1] == "green"):
                 actions[i][2] =  time.time()
                 actions[i][1] = "orange"
@@ -93,32 +93,33 @@ async def notifySensorChange(websocket):
     global emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming
     for sensorValue in data:
 
-        emergency_vehicles = alterArray(emergency_vehicles, sensorValue["id"], sensorValue["emergency_vehicle"])
-        vehicles_blocking = alterArray(vehicles_blocking, sensorValue["id"], sensorValue["vehicles_blocking"])
-        public_transports = alterArray(public_transports, sensorValue["id"], sensorValue["public_transport"])
-        vehicles_waiting = alterArray(vehicles_waiting, sensorValue["id"], sensorValue["vehicles_waiting"])
-        vehicles_coming = alterArray(vehicles_coming, sensorValue["id"], sensorValue["vehicles_coming"])
+        emergency_vehicles = alterArray(emergency_vehicles, sensorValue["id"], sensorValue["emergency_vehicle"], False)
+        vehicles_blocking = alterArray(vehicles_blocking, sensorValue["id"], sensorValue["vehicles_blocking"], True)
+        public_transports = alterArray(public_transports, sensorValue["id"], sensorValue["public_transport"], False)
+        vehicles_waiting = alterArray(vehicles_waiting, sensorValue["id"], sensorValue["vehicles_waiting"], False)
+        vehicles_coming = alterArray(vehicles_coming, sensorValue["id"], sensorValue["vehicles_coming"], False)
 
     print(f"> Processed notify_sensor_change")     
 
-def alterArray(array, id, value):
+def alterArray(array, id, value, blocking):
     if len(array) > 0:
-        if valueToBool(value) == True:
-            proceed = True
-            for row in array:
-                if row == id:
-                    proceed = False
+        if blocking = False
+            if valueToBool(value) == True:
+                proceed = True
+                for row in array:
+                    if row == id:
+                        proceed = False
 
-            if proceed:
-                array.append(id)
-        elif valueToBool(value) == False:
-            proceed = False
-            for row in array:
-                if row == id:
-                    proceed = True
+                if proceed:
+                    array.append(id)
+            elif valueToBool(value) == False:
+                proceed = False
+                for row in array:
+                    if row == id:
+                        proceed = True
 
-            if proceed:
-                array.pop(array.index(id)) 
+                if proceed:
+                    array.pop(array.index(id)) 
 
         return array
 
