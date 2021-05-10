@@ -7,18 +7,19 @@ import json
 import time
 import threading
 
-# Global data and values
+#IP's     Group 1          Group 2           Group 3          Group 4         Group 5            
 ip = ["84.86.123.188", "82.197.211.219", "31.201.228.97", "147.12.9.237", "94.214.255.27"]
-json_data = []
-msg_id = 0
 
+# Global data and values
 actions = []
 crosses = []
+json_data = []
 emergency_vehicles = []
 vehicles_blocking = []
 public_transports = []
 vehicles_waiting = []
 vehicles_coming = []
+msg_id = 0
 
 # Creates a websocketconnection and executes other functions by multithreading
 async def main():
@@ -84,8 +85,9 @@ async def notifySensorChange(websocket):
     msg_id = json.loads(received)["msg_id"]
     data = json.loads(received)["data"]
 
-    global emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming
     for sensorValue in data:
+        global emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming
+
         if valueToBool(sensorValue["emergency_vehicle"]) == True:
             if (emergency_vehicles.index(sensorValue["id"]) if sensorValue["id"] in emergency_vehicles else -1) == -1:
                 emergency_vehicles.append(sensorValue["id"])
@@ -124,8 +126,8 @@ async def notifySensorChange(websocket):
     print(f"> Processed notify_sensor_change")      
 
 # Changes input to boolean
-def valueToBool(v):
-    return str(v).lower() in ("TRUE", "True", "true", "1")
+def valueToBool(value):
+    return str(value).lower() in ("TRUE", "True", "true", "1")
 
 # Changes data of arrays
 def updateArray(array, websocket):
@@ -146,26 +148,12 @@ def updateArray(array, websocket):
                         array.remove(i)
         return array
 
-# Changes data values of data and returns changes to send to the server
+# Create new actions by processing the array values
 async def createActions(websocket):
     global json_data, actions, crosses, emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming
 
     emergency_vehicles = updateArray(emergency_vehicles, websocket)
-
-    if len(vehicles_blocking) > 0:
-        for dataRow in json_data:
-            for i, arrayRow in enumerate(vehicles_blocking):
-                if dataRow["id"] == arrayRow:
-                    proceed = True
-                    for cross in crosses:
-                        for singleCross in cross:
-                            if (dataRow["crosses"].index(singleCross) if singleCross in dataRow["crosses"] else -1) > -1:
-                                proceed = False
-
-                    if proceed:
-                        notifyTrafficLightChange(websocket, {"id": dataRow["id"], "state": "red"})
-                        vehicles_blocking.remove(i)
-
+    vehicles_blocking = updateArray(vehicles_blocking, websocket)
     public_transports = updateArray(public_transports, websocket)
     vehicles_waiting = updateArray(vehicles_waiting, websocket)
     vehicles_coming = updateArray(vehicles_coming, websocket)
@@ -175,8 +163,8 @@ async def createActions(websocket):
 # Sends notify_traffic_light_change message to server
 async def notifyTrafficLightChange(websocket, data):
     global msg_id
-    msg_id = msg_id + 1
 
+    msg_id = msg_id + 1
     command = json.dumps({ "msg_id": msg_id, "msg_type": "notify_traffic_light_change", "data": data })
     await websocket.send(command)
 
