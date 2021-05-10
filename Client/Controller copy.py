@@ -6,7 +6,7 @@ import websockets
 import json
 import time
 import threading
-
+# vehicles blocking reversen, oranje staat te lang stil
 #IP's     Group 1          Group 2           Group 3          Group 4         Group 5            
 ip = ["84.86.123.188", "82.197.211.219", "31.201.228.97", "147.12.9.237", "94.214.255.27"]
 
@@ -52,18 +52,23 @@ async def executeAlgorithms(websocket):
 
     global actions, json_data, crosses
     for i, action in enumerate(actions):
-        if(time.time() - action[2]) >= (action[3]/2):
+        if(time.time() - action[2]) >= action[3]:
             if(action[1] == "green"):
                 actions[i][2] =  time.time()
-                notifyTrafficLightChange(websocket, {"id": action[0], "state": "orange"})
+                actions[i][1] = "orange"
+                await notifyTrafficLightChange(websocket, [{"id": action[0], "state": "orange"}])
             elif(action[1] == "orange"):
+                for data in json_data:
+                actions[i][2] =  time.time()
+                actions[i][1] = "red"
+                await notifyTrafficLightChange(websocket, [{"id": action[0], "state": "red"}])
+            elif(action[1] == "red"):
                 for data in json_data:
                     if data["id"] == action[0]:
                         for c, cross in enumerate(crosses):
                             if data["crosses"] == cross:
-                                crosses.remove(c)
-                notifyTrafficLightChange(websocket, {"id": action[0], "state": "red"})
-                actions.remove(i)
+                                crosses.pop(c)
+                actions.pop(i)
     
     print(f"> Updated and deleted actions")
 
@@ -85,52 +90,44 @@ async def notifySensorChange(websocket):
     msg_id = json.loads(received)["msg_id"]
     data = json.loads(received)["data"]
 
+    global emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming
     for sensorValue in data:
-        global emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming
 
-        if valueToBool(sensorValue["emergency_vehicle"]) == True:
-            if (emergency_vehicles.index(sensorValue["id"]) if sensorValue["id"] in emergency_vehicles else -1) == -1:
-                emergency_vehicles.append(sensorValue["id"])
-        elif valueToBool(sensorValue["emergency_vehicle"]) == False:
-            if (emergency_vehicles.index(sensorValue["id"]) if sensorValue["id"] in emergency_vehicles else -1) > -1:
-                emergency_vehicles.remove(emergency_vehicles.index(sensorValue["id"]))
+        emergency_vehicles = alterArray(emergency_vehicles, sensorValue["id"], sensorValue["emergency_vehicle"])
+        vehicles_blocking = alterArray(vehicles_blocking, sensorValue["id"], sensorValue["vehicles_blocking"])
+        public_transports = alterArray(public_transports, sensorValue["id"], sensorValue["public_transport"])
+        vehicles_waiting = alterArray(vehicles_waiting, sensorValue["id"], sensorValue["vehicles_waiting"])
+        vehicles_coming = alterArray(vehicles_coming, sensorValue["id"], sensorValue["vehicles_coming"])
 
-        if valueToBool(sensorValue["vehicles_blocking"]) == True:
-            if (vehicles_blocking.index(sensorValue["id"]) if sensorValue["id"] in vehicles_blocking else -1) == -1:
-                vehicles_blocking.append(sensorValue["id"])
-        elif valueToBool(sensorValue["vehicles_blocking"]) == False:
-            if (vehicles_blocking.index(sensorValue["id"]) if sensorValue["id"] in vehicles_blocking else -1) > -1:
-                vehicles_blocking.remove(vehicles_blocking.index(sensorValue["id"]))
+    print(f"> Processed notify_sensor_change")     
 
-        if valueToBool(sensorValue["public_transport"]) == True:
-            if (public_transports.index(sensorValue["id"]) if sensorValue["id"] in public_transports else -1) == -1:
-                public_transports.append(sensorValue["id"])
-        elif valueToBool(sensorValue["public_transport"]) == False:
-            if (public_transports.index(sensorValue["id"]) if sensorValue["id"] in public_transports else -1) > -1:
-                public_transports.remove(public_transports.index(sensorValue["id"]))
+def alterArray(array, id, value):
+    if len(array) > 0:
+        if valueToBool(value) == True:
+            proceed = True
+            for row in array:
+                if row == id:
+                    proceed = False
 
-        if valueToBool(sensorValue["vehicles_waiting"]) == True:
-            if (vehicles_waiting.index(sensorValue["id"]) if sensorValue["id"] in vehicles_waiting else -1) == -1:
-                vehicles_waiting.append(sensorValue["id"])
-        elif valueToBool(sensorValue["vehicles_waiting"]) == False:
-            if (vehicles_waiting.index(sensorValue["id"]) if sensorValue["id"] in vehicles_waiting else -1) > -1:
-                vehicles_waiting.remove(vehicles_waiting.index(sensorValue["id"]))
+            if proceed:
+                array.append(id)
+        elif valueToBool(value) == False:
+            proceed = False
+            for row in array:
+                if row == id:
+                    proceed = True
 
-        if valueToBool(sensorValue["vehicles_coming"]) == True:
-            if (vehicles_coming.index(sensorValue["id"]) if sensorValue["id"] in vehicles_coming else -1) == -1:
-                vehicles_coming.append(sensorValue["id"])
-        elif valueToBool(sensorValue["vehicles_coming"]) == False:
-            if (vehicles_coming.index(sensorValue["id"]) if sensorValue["id"] in vehicles_coming else -1) > -1:
-                vehicles_coming.remove(vehicles_coming.index(sensorValue["id"]))
+            if proceed:
+                array.pop(array.index(id)) 
 
-    print(f"> Processed notify_sensor_change")      
+        return array
 
 # Changes input to boolean
 def valueToBool(value):
     return str(value).lower() in ("TRUE", "True", "true", "1")
 
 # Changes data of arrays
-def updateArray(array, websocket):
+async def updateArray(array, websocket):
     if len(array) > 0:
         for dataRow in json_data:
             for i, arrayRow in enumerate(array):
@@ -138,25 +135,26 @@ def updateArray(array, websocket):
                     proceed = True
                     for cross in crosses:
                         for singleCross in cross:
-                            if (dataRow["crosses"].index(singleCross) if singleCross in dataRow["crosses"] else -1) > -1:
-                                proceed = False
+                            for dataCross in dataRow["crosses"]:
+                                if dataCross == singleCross:
+                                    proceed = False
 
                     if proceed:
                         global actions
                         actions.append([dataRow["id"], "green", time.time(), dataRow["clearing_time"]])
-                        notifyTrafficLightChange(websocket, {"id": dataRow["id"], "state": "green"})
-                        array.remove(i)
+                        await notifyTrafficLightChange(websocket, [{"id": dataRow["id"], "state": "green"}])
+                        array.pop(i)
         return array
 
 # Create new actions by processing the array values
 async def createActions(websocket):
     global json_data, actions, crosses, emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming
 
-    emergency_vehicles = updateArray(emergency_vehicles, websocket)
-    vehicles_blocking = updateArray(vehicles_blocking, websocket)
-    public_transports = updateArray(public_transports, websocket)
-    vehicles_waiting = updateArray(vehicles_waiting, websocket)
-    vehicles_coming = updateArray(vehicles_coming, websocket)
+    emergency_vehicles = await updateArray(emergency_vehicles, websocket)
+    vehicles_blocking = await updateArray(vehicles_blocking, websocket)
+    public_transports = await updateArray(public_transports, websocket)
+    vehicles_waiting = await updateArray(vehicles_waiting, websocket)
+    vehicles_coming = await updateArray(vehicles_coming, websocket)
 
     print(f"> Actions created")      
 
