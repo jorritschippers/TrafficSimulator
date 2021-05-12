@@ -24,7 +24,7 @@ msg_id = 0
 # Creates a websocketconnection and executes other functions by multithreading
 async def main():
     global ip
-    uri = "ws://" + ip[1] + ":6969"
+    uri = "ws://" + ip[3] + ":6969"
     # try:
     async with websockets.connect(uri) as websocket:
         print(f"> Controller made connection with server")
@@ -48,20 +48,22 @@ async def main():
 
 # Executes algorithms of controller
 async def executeAlgorithms(websocket):
-    createActions(websocket)
+    await createActions(websocket)
 
     global actions, json_data, crosses
     for i, action in enumerate(actions):
         if(time.time() - action[2]) >= (action[3]/2):
             if(action[1] == "green"):
-                actions[i][2] =  time.time()
-                actions[i][1] = "orange"
-                await notifyTrafficLightChange(websocket, [{"id": action[0], "state": "orange"}])
+                if data["id"] == action[0]: #misschien weghalen
+                    actions[i][2] =  time.time()
+                    actions[i][1] = "orange"
+                    await notifyTrafficLightChange(websocket, [{"id": action[0], "state": "orange"}])
             elif(action[1] == "orange"):
                 for data in json_data:
-                actions[i][2] =  time.time()
-                actions[i][1] = "red"
-                await notifyTrafficLightChange(websocket, [{"id": action[0], "state": "red"}])
+                    if data["id"] == action[0]: #misschien weghalen
+                        actions[i][2] =  time.time()
+                        actions[i][1] = "red"
+                        await notifyTrafficLightChange(websocket, [{"id": action[0], "state": "red"}])
             elif(action[1] == "red"):
                 for data in json_data:
                     if data["id"] == action[0]:
@@ -103,7 +105,7 @@ async def notifySensorChange(websocket):
 
 def alterArray(array, id, value, blocking):
     if len(array) > 0:
-        if blocking = False
+        if blocking == False:
             if valueToBool(value) == True:
                 proceed = True
                 for row in array:

@@ -18,26 +18,28 @@ saved_time = 0
 async def main():
     global ip
     uri = "ws://" + ip[0] + ":6969"
-    try: #nog prioriteren op volgorde, tijdsverschil aanpassen (brug en weg niet hetzelfde), wachttijd na stoplicht op rood?
-        async with websockets.connect(uri) as websocket:
-            print(f"> Controller made connection with server")
-            await initialization(websocket)
+    #try: #nog prioriteren op volgorde, tijdsverschil aanpassen (brug en weg niet hetzelfde), wachttijd na stoplicht op rood?
+        # alle booleans zijn nu optioneel, if statements toevoegen en zorgen dat 1 bool binnen kan komen of alle
+        # er zijn wegen zonder sensoren, zorgen dat alle lichten binnen 120 seconden aangaan (groep 4)
+    async with websockets.connect(uri) as websocket:
+        print(f"> Controller made connection with server")
+        await initialization(websocket)
+        # volgende les: prioriteren met boten en bussen, bij oranje geen auto's over brug als de brug openstaat (bij oranje en groen kunnen beide, mag niet)
+        while True:
+            x = threading.Thread(target= await executeAlgorithms(websocket), args=(1,))  
+            y = threading.Thread(target= await notifySensorChange(websocket), args=(1,))  
 
-            while True:
-                x = threading.Thread(target= await executeAlgorithms(websocket), args=(1,))  
-                y = threading.Thread(target= await notifySensorChange(websocket), args=(1,))  
+            x.start()
+            y.start() 
 
-                x.start()
-                y.start() 
+            if not x.is_alive:
+                x.join()
 
-                if not x.is_alive:
-                    x.join()
+            if not y.is_alive:
+                y.join()  
 
-                if not y.is_alive:
-                    y.join()  
-
-    except Exception as e:
-        print(f"> An error occured ({e})")             
+    # except Exception as e:
+    #     print(f"> An error occured ({e})")             
 
 # Executes algorithms of controller
 async def executeAlgorithms(websocket):
