@@ -2,26 +2,26 @@
 
 # Imports
 import asyncio
-import websockets
 import json
 import time
 import threading
+import websockets
 
-#IP's     Group 1          Group 2           Group 3          Group 4         Group 5            
+#IP's     Group 1          Group 2           Group 3          Group 4         Group 5
 ip = ["84.86.123.188", "82.197.211.219", "31.201.228.97", "147.12.9.237", "94.214.255.27"]
 
 # Global data and values
+msg_id = 0
+forgotten_time = time.time()
+json_data = []
 actions = []
 crosses = []
-json_data = []
 emergency_vehicles = []
 vehicles_blocking = []
 public_transports = []
 vehicles_waiting = []
 vehicles_coming = []
 forgotten_lights = []
-msg_id = 0
-forgotten_time = 0
 
 # Creates a websocketconnection and executes other functions by multithreading
 async def main():
@@ -50,17 +50,21 @@ async def main():
 
 # Executes algorithms of controller
 async def executeAlgorithms(websocket):
-    global forgotten_lights, json_data, actions, crosses, forgotten_time
-    if len(forgotten_lights) == 0 or (time.time() - forgotten_time) >= 120:
+    global forgotten_lights, json_data, actions, crosses, forgotten_time, emergency_vehicles, public_transports, vehicles_waiting, vehicles_coming
+    if (time.time() - forgotten_time) >= 60:
         forgotten_lights.clear()
         forgotten_time = time.time()
         for light in json_data:
             forgotten_lights.append(light["id"])
+        forgotten_lights = removeFromArray(forgotten_lights, emergency_vehicles)
+        forgotten_lights = removeFromArray(forgotten_lights, public_transports)
+        forgotten_lights = removeFromArray(forgotten_lights, vehicles_waiting)
+        forgotten_lights = removeFromArray(forgotten_lights, vehicles_coming)
 
     await createActions(websocket)
 
     for i, action in enumerate(actions):
-        if(time.time() - action[2]) >= (action[3]/2):
+        if(time.time() - action[2]) >= action[3]:
             if action[1] == "green":
                 actions[i][2] =  time.time()
                 actions[i][1] = "orange"
@@ -75,9 +79,19 @@ async def executeAlgorithms(websocket):
                         for c, cross in enumerate(crosses):
                             if data["crosses"] == cross:
                                 crosses.pop(c)
+                                break
                 actions.pop(i)
     
     print(f"> Updated and deleted actions")
+
+# Removes values from array
+def removeFromArray(array, remove):
+    for i, arr in enumerate(array):
+        for rem in remove:
+            if rem == arr:
+                array.pop(i)
+
+    return array
 
 # Receives initialization from server
 async def initialization(websocket):
@@ -93,7 +107,7 @@ async def notifySensorChange(websocket):
     received = await websocket.recv()
     print(f"> Received (notify_sensor_change): {received}")
 
-    global msg_id, emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming
+    global msg_id, emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming, forgotten_lights
     msg_id = json.loads(received)["msg_id"]
 
     for sensorValue in json.loads(received)["data"]:
@@ -128,27 +142,30 @@ async def notifySensorChange(websocket):
     print(f"> Processed notify_sensor_change")     
 
 def alterArray(array, id, value):
-    if len(array) > 0:
-        if valueToBool(value):
-            proceed = True
-            for row in array:
-                if row == id:
-                    proceed = False
-                    break
+    if valueToBool(value):
+        proceed = True
+        for row in array:
+            if row == id:
+                proceed = False
+                break
 
-            if proceed:
-                array.append(id)
-        else:
-            proceed = False
-            for row in array:
-                if row == id:
-                    proceed = True
-                    break
+        if proceed:
+            array.append(id)
+            global forgotten_lights
+            for i, light in enumerate(forgotten_lights):
+                if light == id:
+                    forgotten_lights.pop(i)
+    else:
+        proceed = False
+        for row in array:
+            if row == id:
+                proceed = True
+                break
 
-            if proceed:
-                array.pop(array.index(id)) 
+        if proceed:
+            array.pop(array.index(id)) 
 
-        return array
+    return array
 
 # Changes input to boolean
 def valueToBool(value):
@@ -164,34 +181,38 @@ async def createActions(websocket):
     vehicles_coming = await updateArray(vehicles_coming, websocket)
     forgotten_lights = await updateArray(forgotten_lights, websocket)
 
-    print(f"> Actions created")  
+    print(f"> Actions created: {len(actions)}")  
 
 # Changes data of arrays
 async def updateArray(array, websocket):
-    if len(array) > 0:
-        for dataRow in json_data:
-            for i, arrayRow in enumerate(array):
-                if dataRow["id"] == arrayRow:
-                    proceed = True
+    for dataRow in json_data:
+        for i, arrayRow in enumerate(array):
+            if dataRow["id"] == arrayRow:
+                proceed = True
 
-                    global vehicles_blocking, crosses, actions
-                    for block in vehicles_blocking:
-                        if block == arrayRow:
+                global vehicles_blocking, crosses, actions
+                for block in vehicles_blocking:
+                    if block == arrayRow:
+                        proceed = False
+                        break
+
+                for cross in crosses:
+                    for singleCross in cross:
+                        if singleCross == arrayRow:
                             proceed = False
                             break
 
-                    for cross in crosses:
-                        for singleCross in cross:
-                            for dataCross in dataRow["crosses"]:
-                                if dataCross == singleCross:
-                                    proceed = False
-                                    break
+                for action in actions:
+                    if action[0] == arrayRow:
+                        proceed = False
+                        break
 
-                    if proceed:
-                        actions.append([dataRow["id"], "green", time.time(), dataRow["clearing_time"]])
-                        await notifyTrafficLightChange(websocket, [{"id": dataRow["id"], "state": "green"}])
-                        array.pop(i)
-        return array  
+                if proceed:
+                    crosses.append(dataRow["crosses"])
+                    actions.append([dataRow["id"], "green", time.time(), dataRow["clearing_time"]])
+                    await notifyTrafficLightChange(websocket, [{"id": dataRow["id"], "state": "green"}])
+                    array.pop(i)
+    return array  
 
 # Sends notify_traffic_light_change message to server
 async def notifyTrafficLightChange(websocket, data):
