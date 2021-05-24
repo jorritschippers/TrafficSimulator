@@ -88,11 +88,11 @@ async def executeAlgorithms(websocket):
 
 # Removes values from array
 def removeFromArray(array, remove):
-    for i, arr in enumerate(array):
+    for arr in array:
         for rem in remove:
             if rem == arr:
-                array.pop(i)
-
+                array.pop(array.index(arr))
+                break
     return array
 
 # Receives initialization data from server
@@ -159,6 +159,7 @@ def alterArray(array, id, value):
             for light in enumerate(executed_lights):
                 if light == id:
                     proceed = False
+                    break
             
             if proceed:
                 executed_lights.append(id)
