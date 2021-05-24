@@ -27,7 +27,7 @@ forgotten_lights = []
 # Creates a websocketconnection and executes other functions by multithreading
 async def main():
     global ip
-    uri = "ws://" + ip[0] + ":6969"
+    uri = "ws://" + ip[1] + ":6969"
     async with websockets.connect(uri) as websocket:
         print(f"> Controller made connection with server")
         await initialization(websocket)
@@ -156,12 +156,12 @@ def alterArray(array, id, value):
         if proceed:
             array.append(id)
             global executed_lights
-            for i, light in enumerate(executed_lights):
+            for light in enumerate(executed_lights):
                 if light == id:
                     proceed = False
             
             if proceed:
-                executed_lights.append(i)
+                executed_lights.append(id)
     else:
         proceed = False
         for row in array:
