@@ -2,177 +2,233 @@
 
 # Imports
 import asyncio
-import websockets
 import json
 import time
 import threading
+import websockets
+
+#IP's     Group 1          Group 2           Group 3          Group 4         Group 5
+ip = ["84.86.123.188", "82.197.211.219", "31.201.228.97", "147.12.9.237", "94.214.255.27"]
 
 # Global data and values
-ip = ["84.86.123.188", "82.197.211.219", "31.201.228.97", "147.12.9.237", "94.214.255.27"]
-json_data = []
 msg_id = 0
-current_clearing_time = 0.0
-saved_time = 0
+forgotten_time = time.time()
+json_data = []
+actions = []
+crosses = []
+emergency_vehicles = []
+vehicles_blocking = []
+public_transports = []
+vehicles_waiting = []
+vehicles_coming = []
+executed_lights = []
+forgotten_lights = []
 
 # Creates a websocketconnection and executes other functions by multithreading
 async def main():
     global ip
     uri = "ws://" + ip[0] + ":6969"
-    #try: #nog prioriteren op volgorde, tijdsverschil aanpassen (brug en weg niet hetzelfde), wachttijd na stoplicht op rood?
-        # alle booleans zijn nu optioneel, if statements toevoegen en zorgen dat 1 bool binnen kan komen of alle
-        # er zijn wegen zonder sensoren, zorgen dat alle lichten binnen 120 seconden aangaan (groep 4)
     async with websockets.connect(uri) as websocket:
         print(f"> Controller made connection with server")
         await initialization(websocket)
-        # volgende les: prioriteren met boten en bussen, bij oranje geen auto's over brug als de brug openstaat (bij oranje en groen kunnen beide, mag niet)
+
         while True:
+            # Create threads
             x = threading.Thread(target= await executeAlgorithms(websocket), args=(1,))  
             y = threading.Thread(target= await notifySensorChange(websocket), args=(1,))  
 
+            # Start threads
             x.start()
-            y.start() 
+            y.start()       
 
+            # Join threads when executed
             if not x.is_alive:
                 x.join()
 
             if not y.is_alive:
-                y.join()  
-
-    # except Exception as e:
-    #     print(f"> An error occured ({e})")             
+                y.join()              
 
 # Executes algorithms of controller
 async def executeAlgorithms(websocket):
-    global json_data, current_clearing_time, saved_time
-    if current_clearing_time == 0 or saved_time == 0:
-        commands = await changeDataValues(json_data)
-        if len(commands) > 0:
-            await notifyTrafficLightChange(websocket, commands)
-    elif (time.time() - saved_time) >= (current_clearing_time / 2):
-        commands = await changeDataValues(json_data)
-        if len(commands) > 0:
-            await notifyTrafficLightChange(websocket, commands)
+    global executed_lights, forgotten_lights, json_data, actions, crosses, forgotten_time, emergency_vehicles, public_transports, vehicles_waiting, vehicles_coming
+    
+    # Create array of forgotten lights that were not used every two minutes
+    if (time.time() - forgotten_time) >= 120:
+        forgotten_lights.clear()   
+        forgotten_time = time.time()   
+        for light in json_data:         
+            forgotten_lights.append(light["id"])
+        forgotten_lights = removeFromArray(forgotten_lights, executed_lights)
+        executed_lights.clear()
 
-# Receives initialization from server
+    # Create executable actions for the lights
+    await createActions(websocket)
+
+    # Update the actions and send the changes to the server
+    for i, action in enumerate(actions):
+        if time.time() >= action[2]:
+            if action[1] == "green":
+                actions[i][2] =  time.time() + action[3] 
+                actions[i][1] = "orange"      
+                await notifyTrafficLightChange(websocket, [{"id": action[0], "state": "orange"}])
+            elif action[1] == "orange":
+                actions[i][2] =  time.time() + action[3] 
+                actions[i][1] = "red"           
+                await notifyTrafficLightChange(websocket, [{"id": action[0], "state": "red"}])
+            elif action[1] == "red":
+                for data in json_data:
+                    if data["id"] == action[0]:
+                        for c, cross in enumerate(crosses):
+                            if data["crosses"] == cross:
+                                crosses.pop(c)
+                                break
+                actions.pop(i)
+    
+    print(f"> Updated and deleted actions")
+
+# Removes values from array
+def removeFromArray(array, remove):
+    for i, arr in enumerate(array):
+        for rem in remove:
+            if rem == arr:
+                array.pop(i)
+
+    return array
+
+# Receives initialization data from server
 async def initialization(websocket):
     received = await websocket.recv()
     print(f"> Received (initialization): {received}")
 
     global msg_id, json_data
     msg_id = json.loads(received)["msg_id"] 
-    json_data = json.loads(received)["data"]
-
-    for i, value in enumerate(json_data):        
-        json_data[i]["state"] = "red"
-        json_data[i]["vehicles_waiting"] = False
-        json_data[i]["vehicles_coming"] = False
-        json_data[i]["vehicles_blocking"] = False
-        json_data[i]["emergency_vehicle"] = False
-        json_data[i]["public_transport"] = False
-
-    print(f"> Saved initialization data")              
+    json_data = json.loads(received)["data"]             
 
 # Receives notify_sensor_change from server
 async def notifySensorChange(websocket):
+    global msg_id
     received = await websocket.recv()
+    msg_id = json.loads(received)["msg_id"]
     print(f"> Received (notify_sensor_change): {received}")
 
-    global msg_id, json_data
-    msg_id = json.loads(received)["msg_id"]
-    data = json.loads(received)["data"]
+    # Update the current data array with the new data from the sensors
+    global emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming, forgotten_lights
+    for sensorValue in json.loads(received)["data"]:
+        if "emergency_vehicle" in sensorValue:
+            emergency_vehicles = alterArray(emergency_vehicles, sensorValue["id"], sensorValue["emergency_vehicle"])
+        
+        if "public_transport" in sensorValue:
+            public_transports = alterArray(public_transports, sensorValue["id"], sensorValue["public_transport"])
+                
+        if "vehicles_waiting" in sensorValue:
+            vehicles_waiting = alterArray(vehicles_waiting, sensorValue["id"], sensorValue["vehicles_waiting"])
+        
+        if "vehicles_coming" in sensorValue:
+            vehicles_coming = alterArray(vehicles_coming, sensorValue["id"], sensorValue["vehicles_coming"])
 
-    for i, currentValue in enumerate(json_data):
-        for sensorValue in data:
-            if currentValue["id"] == sensorValue["id"]:
-                json_data[i]["vehicles_waiting"] = valueToBool(sensorValue["vehicles_waiting"])
-                json_data[i]["vehicles_coming"] = valueToBool(sensorValue["vehicles_coming"])
-                json_data[i]["vehicles_blocking"] = valueToBool(sensorValue["vehicles_blocking"])
-                json_data[i]["emergency_vehicle"] = valueToBool(sensorValue["emergency_vehicle"])
-                json_data[i]["public_transport"] = valueToBool(sensorValue["public_transport"])
-
-    print(f"> Processed notify_sensor_change")      
-
-# Changes input to boolean
-def valueToBool(v):
-    return str(v).lower() in ("TRUE", "True", "true", "1")
-
-# Changes data values of data and returns changes to send to the server
-async def changeDataValues(data):
-    commands = []
-    orders = []
-    crosses = []
-    max_clearing_time = 0.0
-
-    # Prioritize certain booleans
-    for i, path in enumerate(data):
-        if path["emergency_vehicle"] or path["public_transport"] or path["vehicles_blocking"]:
-            proceed = True
-            for cross in crosses:
-                if data[i]["id"] == cross:
-                    proceed = False
-
-            if proceed:
-                data[i]["state"] = "green"
-                commands.append({"id": data[i]["id"], "state": data[i]["state"] })
-                for cross in data[i]["crosses"]:
-                    crosses.append(cross)
-
-                if data[i]["clearing_time"] > max_clearing_time:
-                    max_clearing_time = data[i]["clearing_time"]
-
-    # Change the state of a light
-    for i, path in enumerate(data):
-        if path["state"] == "green":
-            if not path["vehicles_waiting"] or not path["vehicles_coming"]:
-                orders.append([i, "orange"])
-                commands.append({"id": data[i]["id"], "state": "orange" })
-                for cross in data[i]["crosses"]:
-                    crosses.append(cross)
-                if data[i]["clearing_time"] > max_clearing_time:
-                    max_clearing_time = data[i]["clearing_time"]
-        elif path["state"] == "orange":
-            if not path["vehicles_waiting"] or not path["vehicles_coming"]:
-                orders.append([i, "red"])
-                commands.append({"id": data[i]["id"], "state": "red" })
-                for cross in data[i]["crosses"]:
-                    crosses.append(cross)
-                if data[i]["clearing_time"] > max_clearing_time:
-                    max_clearing_time = data[i]["clearing_time"]
-        elif path["state"] == "red":
-            if path["vehicles_waiting"] or path["vehicles_coming"]:
+        if "vehicles_blocking" in sensorValue:
+            if valueToBool(sensorValue["vehicles_blocking"]):
                 proceed = True
-                for cross in crosses:
-                    if data[i]["id"] == cross:
+                for item in vehicles_blocking:
+                    if item == sensorValue["id"]:
                         proceed = False
+                        break
 
                 if proceed:
-                    orders.append([i, "green"])
-                    commands.append({"id": data[i]["id"], "state": "green" })
-                    for cross in data[i]["crosses"]:
-                        crosses.append(cross)
+                    vehicles_blocking.append(sensorValue["id"])
+            else:
+                for i, item in enumerate(vehicles_blocking):
+                    if item == sensorValue["id"]:
+                        vehicles_blocking.pop(i)
+                        break 
 
-                    if data[i]["clearing_time"] > max_clearing_time:
-                        max_clearing_time = data[i]["clearing_time"]
-    
-    for order in orders:
-        data[order[0]]["state"] = order[1]
+    print(f"> Processed notify_sensor_change")     
 
-    print(f"> Evaluated current data (execute: {len(commands)})")      
+# Alters the data array with the sensor information with adding or removing data
+def alterArray(array, id, value):
+    if valueToBool(value):
+        proceed = True
+        for row in array:
+            if row == id:
+                proceed = False
+                break
 
-    global json_data, current_clearing_time, saved_time
-    json_data = data
-    current_clearing_time = max_clearing_time
-    saved_time = time.time()
-    return commands
+        if proceed:
+            array.append(id)
+            global executed_lights
+            for i, light in enumerate(executed_lights):
+                if light == id:
+                    proceed = False
+            
+            if proceed:
+                executed_lights.append(i)
+    else:
+        proceed = False
+        for row in array:
+            if row == id:
+                proceed = True
+                break
+
+        if proceed:
+            array.pop(array.index(id)) 
+
+    return array
+
+# Changes input to boolean
+def valueToBool(value):
+    return str(value).lower() in ("TRUE", "True", "true", "1")
+
+# Create new actions by processing the array values
+async def createActions(websocket):
+    global json_data, actions, crosses, emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming, forgotten_lights
+
+    emergency_vehicles = await updateArray(emergency_vehicles, websocket)
+    public_transports = await updateArray(public_transports, websocket)
+    vehicles_waiting = await updateArray(vehicles_waiting, websocket)
+    vehicles_coming = await updateArray(vehicles_coming, websocket)
+    forgotten_lights = await updateArray(forgotten_lights, websocket)
+
+    print(f"> Actions created: {len(actions)}")  
+
+# Updates given data arrays
+async def updateArray(array, websocket):
+    for dataRow in json_data:
+        for i, arrayRow in enumerate(array):
+            if dataRow["id"] == arrayRow:
+                proceed = True
+
+                global vehicles_blocking, crosses, actions
+                for block in vehicles_blocking:
+                    if block == arrayRow:
+                        proceed = False
+                        break
+
+                for cross in crosses:
+                    for singleCross in cross:
+                        if singleCross == arrayRow:
+                            proceed = False
+                            break
+
+                for action in actions:
+                    if action[0] == arrayRow:
+                        proceed = False
+                        break
+
+                if proceed:
+                    # Creates a new action and sends it to the server
+                    crosses.append(dataRow["crosses"])
+                    actions.append([dataRow["id"], "green", time.time() + (dataRow["clearing_time"]/2), dataRow["clearing_time"]/2])
+                    await notifyTrafficLightChange(websocket, [{"id": dataRow["id"], "state": "green"}])
+                    array.pop(i)
+    return array  
 
 # Sends notify_traffic_light_change message to server
 async def notifyTrafficLightChange(websocket, data):
     global msg_id
     msg_id = msg_id + 1
-
+    
     command = json.dumps({ "msg_id": msg_id, "msg_type": "notify_traffic_light_change", "data": data })
     await websocket.send(command)
-
     print(f"> Send (notify_traffic_light_change): {command}")
 
 # Runs main function until complete
