@@ -27,7 +27,7 @@ forgotten_lights = []
 # Creates a websocketconnection and executes other functions by multithreading
 async def main():
     global ip
-    uri = "ws://" + ip[1] + ":6969"
+    uri = "ws://" + ip[0] + ":6969"
     async with websockets.connect(uri) as websocket:
         print(f"> Controller made connection with server")
         await initialization(websocket)
@@ -53,11 +53,11 @@ async def executeAlgorithms(websocket):
     global executed_lights, forgotten_lights, json_data, actions, crosses, forgotten_time, emergency_vehicles, public_vehicles, vehicles_waiting, vehicles_coming
     
     # Create array of forgotten lights that were not used every two minutes
-    if (time.time() - forgotten_time) >= 120:
-        forgotten_lights.clear()   
+    if (time.time() - forgotten_time) >= 120:  
         forgotten_time = time.time()   
-        for light in json_data:         
-            forgotten_lights.append(light["id"])
+        for light in json_data:     
+            if not light["id"] in forgotten_lights:    
+                forgotten_lights.append(light["id"])
         forgotten_lights = removeFromArray(forgotten_lights, executed_lights)
         executed_lights.clear()
 
@@ -127,6 +127,7 @@ async def notifySensorChange(websocket):
             vehicles_coming = alterArray(vehicles_coming, sensorValue["id"], sensorValue["vehicles_coming"])
 
         if "vehicles_blocking" in sensorValue:
+            # Check if vehicles_blocking contains id, else add or remove it
             if valueToBool(sensorValue["vehicles_blocking"]):
                 proceed = True
                 for item in vehicles_blocking:
@@ -148,6 +149,8 @@ async def notifySensorChange(websocket):
 def alterArray(array, id, value):
     if valueToBool(value):
         proceed = True
+
+        # Check if array contains id, else add it to the array
         for row in array:
             if row == id:
                 proceed = False
@@ -156,6 +159,7 @@ def alterArray(array, id, value):
         if proceed:
             array.append(id)
             global executed_lights
+            # Check if executed_lights contains id, else add it to the array
             for light in enumerate(executed_lights):
                 if light == id:
                     proceed = False
@@ -165,6 +169,8 @@ def alterArray(array, id, value):
                 executed_lights.append(id)
     else:
         proceed = False
+
+        # Check if array contains id, else remove it from the array
         for row in array:
             if row == id:
                 proceed = True
@@ -185,33 +191,37 @@ async def createActions(websocket):
 
     emergency_vehicles = await updateArray(emergency_vehicles, websocket)
     public_vehicles = await updateArray(public_vehicles, websocket)
+    forgotten_lights = await updateArray(forgotten_lights, websocket)
     vehicles_waiting = await updateArray(vehicles_waiting, websocket)
     vehicles_coming = await updateArray(vehicles_coming, websocket)
-    forgotten_lights = await updateArray(forgotten_lights, websocket)
 
     print(f"> Actions created: {len(actions)}")  
 
 # Updates given data arrays
 async def updateArray(array, websocket):
+    # Check if light can be set to green
     for dataRow in json_data:
-        for i, arrayRow in enumerate(array):
-            if dataRow["id"] == arrayRow:
+        for i, id in enumerate(array):
+            if dataRow["id"] == id:
                 proceed = True
 
                 global vehicles_blocking, crosses, actions
+                # Check if vehicles_blocking contains id
                 for block in vehicles_blocking:
-                    if block == arrayRow:
+                    if block == id:
                         proceed = False
                         break
 
+                # Check if crosses contains id
                 for cross in crosses:
                     for singleCross in cross:
-                        if singleCross == arrayRow:
+                        if singleCross == id:
                             proceed = False
                             break
 
+                # Check if actions contains id
                 for action in actions:
-                    if action[0] == arrayRow:
+                    if action[0] == id:
                         proceed = False
                         break
 
@@ -230,6 +240,7 @@ async def notifyTrafficLightChange(websocket, data):
     
     command = json.dumps({ "msg_id": msg_id, "msg_type": "notify_traffic_light_change", "data": data })
     await websocket.send(command)
+
     print(f"> Send (notify_traffic_light_change): {command}")
 
 # Runs main function until complete
