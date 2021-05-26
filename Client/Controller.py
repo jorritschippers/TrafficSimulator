@@ -18,7 +18,7 @@ actions = []
 crosses = []
 emergency_vehicles = []
 vehicles_blocking = []
-public_transports = []
+public_vehicles = []
 vehicles_waiting = []
 vehicles_coming = []
 executed_lights = []
@@ -50,7 +50,7 @@ async def main():
 
 # Executes algorithms of controller
 async def executeAlgorithms(websocket):
-    global executed_lights, forgotten_lights, json_data, actions, crosses, forgotten_time, emergency_vehicles, public_transports, vehicles_waiting, vehicles_coming
+    global executed_lights, forgotten_lights, json_data, actions, crosses, forgotten_time, emergency_vehicles, public_vehicles, vehicles_waiting, vehicles_coming
     
     # Create array of forgotten lights that were not used every two minutes
     if (time.time() - forgotten_time) >= 120:
@@ -112,13 +112,13 @@ async def notifySensorChange(websocket):
     print(f"> Received (notify_sensor_change): {received}")
 
     # Update the current data array with the new data from the sensors
-    global emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming, forgotten_lights
+    global emergency_vehicles, vehicles_blocking, public_vehicles, vehicles_waiting, vehicles_coming, forgotten_lights
     for sensorValue in json.loads(received)["data"]:
         if "emergency_vehicle" in sensorValue:
             emergency_vehicles = alterArray(emergency_vehicles, sensorValue["id"], sensorValue["emergency_vehicle"])
         
-        if "public_transport" in sensorValue:
-            public_transports = alterArray(public_transports, sensorValue["id"], sensorValue["public_transport"])
+        if "public_vehicle" in sensorValue:
+            public_vehicles = alterArray(public_vehicles, sensorValue["id"], sensorValue["public_vehicle"])
                 
         if "vehicles_waiting" in sensorValue:
             vehicles_waiting = alterArray(vehicles_waiting, sensorValue["id"], sensorValue["vehicles_waiting"])
@@ -181,10 +181,10 @@ def valueToBool(value):
 
 # Create new actions by processing the array values
 async def createActions(websocket):
-    global json_data, actions, crosses, emergency_vehicles, vehicles_blocking, public_transports, vehicles_waiting, vehicles_coming, forgotten_lights
+    global json_data, actions, crosses, emergency_vehicles, vehicles_blocking, public_vehicles, vehicles_waiting, vehicles_coming, forgotten_lights
 
     emergency_vehicles = await updateArray(emergency_vehicles, websocket)
-    public_transports = await updateArray(public_transports, websocket)
+    public_vehicles = await updateArray(public_vehicles, websocket)
     vehicles_waiting = await updateArray(vehicles_waiting, websocket)
     vehicles_coming = await updateArray(vehicles_coming, websocket)
     forgotten_lights = await updateArray(forgotten_lights, websocket)
